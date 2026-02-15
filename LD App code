@@ -1,0 +1,403 @@
+classdef LD_data < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                    matlab.ui.Figure
+        load_old_data               matlab.ui.control.Button
+        ConnecttoArduinoButton_2    matlab.ui.control.Button
+        ExportDataButton            matlab.ui.control.Button
+        SolinoidValveSequenceLabel  matlab.ui.control.Label
+        LifeDetectionDataControlPanlelLabel  matlab.ui.control.Label
+        ListBox                     matlab.ui.control.ListBox
+        TemperatureGraphsLabel      matlab.ui.control.Label
+        DropDown                    matlab.ui.control.DropDown
+        DropDownLabel               matlab.ui.control.Label
+        CloseExportButton           matlab.ui.control.Button
+        Humidity                    matlab.ui.control.UIAxes
+        CO2                         matlab.ui.control.UIAxes
+        Temperature                 matlab.ui.control.UIAxes
+    end
+
+    properties (Access = private)
+        s
+        timerObj
+        t0
+    
+        row = 0
+        maxRows = 5000
+        dataSet              % [Temperature Humidity CO2]
+        
+        tempLine
+        co2Line
+        humLine
+    
+        timeVec              % time stamps for current run (size: maxRows x 1)
+        lastDataSet          % data from previous run
+        lastTimeVec          % time stamps from previous run
+        selectedIdx          % indices of points selected via data tips
+    end
+    
+    methods (Access = public)
+        
+        function readSerial(app)
+            try
+                line = readline(app.s);
+                data = str2double(split(line,","));
+                
+                if numel(data) ~= 3
+                    return
+                end
+                
+                T = data(1);
+                H = data(2);
+                C = data(3);
+                
+                app.row = app.row + 1;
+                app.dataSet(app.row,:) = [T H C];
+                
+                tNow = toc(app.t0);
+                app.timeVec(app.row) = tNow;
+
+                addpoints(app.tempLine,tNow,T);
+                addpoints(app.co2Line,tNow,C);
+                addpoints(app.humLine,tNow,H);
+                
+                drawnow limitrate
+            catch
+            end
+        end
+
+        function txt = displayCoordinates(~,info)
+            x = info.Position(1);
+            y = info.Position(2);
+            myDatatipText = "(%s, %s)";
+            txt = sprintf(myDatatipText, num2str(x), num2str(y));
+        end
+        
+    end
+    
+    methods (Access = private)
+        
+        function setupDataTips(app, lineHandle)
+        % Customize labels (optional)
+        if isprop(lineHandle,'DataTipTemplate')
+            dtRows = lineHandle.DataTipTemplate.DataTipRows;
+            if numel(dtRows) >= 2
+                dtRows(1).Label = 'Time (s)';
+                dtRows(2).Label = 'Value';
+            end
+            lineHandle.DataTipTemplate.DataTipRows = dtRows;
+        end
+
+        % When a new datatip is created, log which index it corresponds to
+            if isprop(lineHandle,'DataTipCreatedFcn')
+                lineHandle.DataTipCreatedFcn = @(src,event)app.datatipCreatedCallback(src,event);
+            end
+    end
+
+            function datatipCreatedCallback(app, ~, event)
+                % Position = [time value]
+                pos = event.DataTip.Position;
+                t = pos(1);
+        
+                if app.row > 0
+                    % Find nearest recorded time index
+                    [~, idx] = min(abs(app.timeVec(1:app.row) - t));
+                    app.selectedIdx = unique([app.selectedIdx; idx]); % avoid duplicates
+                end
+                
+            end
+    end
+   
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Callback function
+        function ConnecttoArduinoButton_2Pushed2(app, event)
+
+        end
+
+        % Callback function
+        function ExportDataButtonPushed2(app, event)
+
+        end
+
+        % Callback function
+        function CloseExportButtonPushed2(app, event)
+
+        end
+
+        % Button pushed function: ConnecttoArduinoButton_2
+        function ConnecttoArduinoButton_2Pushed3(app, event)
+            port = "/dev/cu.usbmodem101";
+            baud = 115200;
+            % --- Preserve previous run, if any ---
+            if app.row > 0
+                app.lastDataSet = app.dataSet(1:app.row,:);
+                app.lastTimeVec = app.timeVec(1:app.row);
+            else
+                app.lastDataSet = [];
+                app.lastTimeVec = [];
+            end
+
+            app.s = serialport(port, baud);
+            configureTerminator(app.s,"LF");
+            pause(2);
+            flush(app.s);
+            
+            app.dataSet = zeros(app.maxRows,3);
+            app.timeVec = zeros(app.maxRows,1);
+            app.selectedIdx = [];
+            app.row = 0;
+            
+            cla(app.Temperature)
+            cla(app.CO2)
+            cla(app.Humidity)
+
+            % --- Plot previous trial in gray, if available ---
+            if ~isempty(app.lastDataSet)
+                % Temperature vs time
+                hold(app.Temperature,'on');
+                plot(app.Temperature, app.lastTimeVec, app.lastDataSet(:,1), ...
+                     'Color',[0.7 0.7 0.7],'LineWidth',1);
+                hold(app.Temperature,'off');
+        
+                % Humidity vs time (note your axes naming is swapped)
+                hold(app.CO2,'on');
+                plot(app.CO2, app.lastTimeVec, app.lastDataSet(:,2), ...
+                     'Color',[0.7 0.7 0.7],'LineWidth',1);
+                hold(app.CO2,'off');
+        
+                % CO2 vs time
+                hold(app.Humidity,'on');
+                plot(app.Humidity, app.lastTimeVec, app.lastDataSet(:,3), ...
+                     'Color',[0.7 0.7 0.7],'LineWidth',1);
+                hold(app.Humidity,'off');
+            end
+            
+            app.tempLine = animatedline(app.Temperature,'Color','r');
+            ylabel(app.Temperature,'Temperature °C')
+            
+            app.co2Line = animatedline(app.CO2,'Color','b');
+            ylabel(app.CO2,'CO2 PPM')
+            
+            app.humLine = animatedline(app.Humidity,'Color','g');
+            ylabel(app.Humidity,'Humidity %')
+            xlabel(app.Humidity,'Time (s)')
+
+            % Enable interactive data tips on the axes
+            app.Temperature.Interactions = [dataTipInteraction panInteraction zoomInteraction];
+            app.CO2.Interactions         = [dataTipInteraction panInteraction zoomInteraction];
+            app.Humidity.Interactions    = [dataTipInteraction panInteraction zoomInteraction];
+            
+            % Attach datatip callbacks to each line
+            setupDataTips(app, app.tempLine);
+            setupDataTips(app, app.co2Line);
+            setupDataTips(app, app.humLine);
+            
+            app.t0 = tic;
+            
+            app.timerObj = timer( ...
+                'ExecutionMode','fixedSpacing', ...
+                'Period',0.1, ...
+                'TimerFcn',@(~,~)readSerial(app));
+
+            start(app.timerObj)
+            
+        end
+
+        % Button pushed function: ExportDataButton
+        function ExportDataButtonPushed3(app, event)
+            resultsFolder = '../Results';
+        
+            if ~isfolder(resultsFolder)
+                mkdir(resultsFolder);
+            end
+        
+            baseName = 'dataSet';
+            ext = '.csv';
+        
+            existingFiles = dir(fullfile(resultsFolder,[baseName,'*.csv']));
+        
+            if isempty(existingFiles)
+                newFileName = [baseName ext];
+            else
+                numbers = zeros(length(existingFiles),1);
+                for k = 1:length(existingFiles)
+                    tok = regexp(existingFiles(k).name,['_(\d+)' ext],'tokens');
+                    if ~isempty(tok)
+                        numbers(k) = str2double(tok{1}{1});
+                    end
+                end
+                newFileName = sprintf('%s_%d%s',baseName,max(numbers)+1,ext);
+            end
+        
+            fullFilePath = fullfile(resultsFolder,newFileName);
+        
+            % Main dataset export
+            writetable(array2table(app.dataSet(1:app.row,:), ...
+                'VariableNames',{'Temperature','Humidity','CO2'}),fullFilePath);
+        
+            % Highlighted points export
+            if ~isempty(app.selectedIdx)
+                idx = unique(app.selectedIdx);
+                highlighted = [app.timeVec(idx), app.dataSet(idx,:)];  % [Time T H C]
+                highlightedTbl = array2table(highlighted, ...
+                    'VariableNames',{'Time_s','Temperature','Humidity','CO2'});
+                
+                highlightedFile = fullfile(resultsFolder,'highlighted_data.csv');
+                writetable(highlightedTbl, highlightedFile);
+            end
+        end
+
+        % Button pushed function: CloseExportButton
+        function CloseExportButtonPushed3(app, event)
+            % Stop timer safely
+            if ~isempty(app.timerObj) && isvalid(app.timerObj)
+                stop(app.timerObj);
+                delete(app.timerObj);
+            end
+            
+            % Close serial safely
+            if ~isempty(app.s)
+                clear app.s
+            end
+            
+            delete(app.UIFigure)
+        end
+
+        % Button pushed function: load_old_data
+        function load_old_dataButtonPushed(app, event)
+            
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 960 540];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create Temperature
+            app.Temperature = uiaxes(app.UIFigure);
+            title(app.Temperature, 'Temperature')
+            xlabel(app.Temperature, 'Time')
+            ylabel(app.Temperature, 'Temperature °C')
+            zlabel(app.Temperature, 'Z')
+            app.Temperature.Position = [21 260 456 222];
+
+            % Create CO2
+            app.CO2 = uiaxes(app.UIFigure);
+            title(app.CO2, 'Humidity')
+            xlabel(app.CO2, 'Time')
+            ylabel(app.CO2, 'Humidity %')
+            zlabel(app.CO2, 'Z')
+            app.CO2.Position = [21 22 456 218];
+
+            % Create Humidity
+            app.Humidity = uiaxes(app.UIFigure);
+            title(app.Humidity, 'CO2')
+            xlabel(app.Humidity, 'Time')
+            ylabel(app.Humidity, 'CO2 PPM')
+            zlabel(app.Humidity, 'Z')
+            app.Humidity.Position = [486 260 455 222];
+
+            % Create CloseExportButton
+            app.CloseExportButton = uibutton(app.UIFigure, 'push');
+            app.CloseExportButton.ButtonPushedFcn = createCallbackFcn(app, @CloseExportButtonPushed3, true);
+            app.CloseExportButton.FontSize = 14;
+            app.CloseExportButton.Position = [810 17 135 32];
+            app.CloseExportButton.Text = 'Close & Export';
+
+            % Create DropDownLabel
+            app.DropDownLabel = uilabel(app.UIFigure);
+            app.DropDownLabel.HorizontalAlignment = 'right';
+            app.DropDownLabel.Position = [742 183 66 22];
+            app.DropDownLabel.Text = 'Drop Down';
+
+            % Create DropDown
+            app.DropDown = uidropdown(app.UIFigure);
+            app.DropDown.Position = [823 183 100 22];
+
+            % Create TemperatureGraphsLabel
+            app.TemperatureGraphsLabel = uilabel(app.UIFigure);
+            app.TemperatureGraphsLabel.FontSize = 14;
+            app.TemperatureGraphsLabel.Position = [534 211 174 36];
+            app.TemperatureGraphsLabel.Text = 'Temperature Graphs';
+
+            % Create ListBox
+            app.ListBox = uilistbox(app.UIFigure);
+            app.ListBox.Items = {'Thermoresistor', 'Heating element'};
+            app.ListBox.Multiselect = 'on';
+            app.ListBox.Position = [534 53 174 152];
+            app.ListBox.Value = {'Thermoresistor'};
+
+            % Create LifeDetectionDataControlPanlelLabel
+            app.LifeDetectionDataControlPanlelLabel = uilabel(app.UIFigure);
+            app.LifeDetectionDataControlPanlelLabel.FontSize = 24;
+            app.LifeDetectionDataControlPanlelLabel.Position = [21 495 397 32];
+            app.LifeDetectionDataControlPanlelLabel.Text = 'Life Detection Data & Control Panlel';
+
+            % Create SolinoidValveSequenceLabel
+            app.SolinoidValveSequenceLabel = uilabel(app.UIFigure);
+            app.SolinoidValveSequenceLabel.FontSize = 14;
+            app.SolinoidValveSequenceLabel.Position = [742 218 159 22];
+            app.SolinoidValveSequenceLabel.Text = 'Solinoid Valve Sequence';
+
+            % Create ExportDataButton
+            app.ExportDataButton = uibutton(app.UIFigure, 'push');
+            app.ExportDataButton.ButtonPushedFcn = createCallbackFcn(app, @ExportDataButtonPushed3, true);
+            app.ExportDataButton.FontSize = 14;
+            app.ExportDataButton.Position = [809 53 137 32];
+            app.ExportDataButton.Text = 'Export Data';
+
+            % Create ConnecttoArduinoButton_2
+            app.ConnecttoArduinoButton_2 = uibutton(app.UIFigure, 'push');
+            app.ConnecttoArduinoButton_2.ButtonPushedFcn = createCallbackFcn(app, @ConnecttoArduinoButton_2Pushed3, true);
+            app.ConnecttoArduinoButton_2.FontSize = 14;
+            app.ConnecttoArduinoButton_2.Position = [809 90 137 32];
+            app.ConnecttoArduinoButton_2.Text = 'Connect to Arduino';
+
+            % Create load_old_data
+            app.load_old_data = uibutton(app.UIFigure, 'push');
+            app.load_old_data.ButtonPushedFcn = createCallbackFcn(app, @load_old_dataButtonPushed, true);
+            app.load_old_data.FontSize = 14;
+            app.load_old_data.Position = [809 127 138 32];
+            app.load_old_data.Text = 'Load Previous Data';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = LD_data
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
