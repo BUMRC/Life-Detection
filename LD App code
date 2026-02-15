@@ -58,9 +58,13 @@ classdef LD_data < matlab.apps.AppBase
                 tNow = toc(app.t0);
                 app.timeVec(app.row) = tNow;
 
-                addpoints(app.tempLine,tNow,T);
-                addpoints(app.co2Line,tNow,C);
-                addpoints(app.humLine,tNow,H);
+                % Update full line data from stored arrays
+                set(app.tempLine, 'XData', app.timeVec(1:app.row), ...
+                                  'YData', app.dataSet(1:app.row,1));
+                set(app.co2Line,  'XData', app.timeVec(1:app.row), ...
+                                  'YData', app.dataSet(1:app.row,3));
+                set(app.humLine,  'XData', app.timeVec(1:app.row), ...
+                                  'YData', app.dataSet(1:app.row,2));
                 
                 drawnow limitrate
             catch
@@ -76,9 +80,9 @@ classdef LD_data < matlab.apps.AppBase
         
     end
     
-    methods (Access = private)
-        
-        function setupDataTips(app, lineHandle)
+  methods (Access = private)
+    
+    function setupDataTips(app, lineHandle)
         % Customize labels (optional)
         if isprop(lineHandle,'DataTipTemplate')
             dtRows = lineHandle.DataTipTemplate.DataTipRows;
@@ -90,24 +94,25 @@ classdef LD_data < matlab.apps.AppBase
         end
 
         % When a new datatip is created, log which index it corresponds to
-            if isprop(lineHandle,'DataTipCreatedFcn')
-                lineHandle.DataTipCreatedFcn = @(src,event)app.datatipCreatedCallback(src,event);
-            end
+        if isprop(lineHandle,'DataTipCreatedFcn')
+            % src is unused, so ignore it with ~
+            lineHandle.DataTipCreatedFcn = @(~,event) app.datatipCreatedCallback(event);
+        end
     end
 
-            function datatipCreatedCallback(app, ~, event)
-                % Position = [time value]
-                pos = event.DataTip.Position;
-                t = pos(1);
-        
-                if app.row > 0
-                    % Find nearest recorded time index
-                    [~, idx] = min(abs(app.timeVec(1:app.row) - t));
-                    app.selectedIdx = unique([app.selectedIdx; idx]); % avoid duplicates
-                end
-                
-            end
+    function datatipCreatedCallback(app, event)
+        % Position = [time value]
+        pos = event.DataTip.Position;
+        t = pos(1);
+
+        if app.row > 0
+            % Find nearest recorded time index
+            [~, idx] = min(abs(app.timeVec(1:app.row) - t));
+            app.selectedIdx = unique([app.selectedIdx; idx]); % avoid duplicates
+        end
     end
+
+end
    
 
     % Callbacks that handle component events
@@ -176,13 +181,17 @@ classdef LD_data < matlab.apps.AppBase
                 hold(app.Humidity,'off');
             end
             
-            app.tempLine = animatedline(app.Temperature,'Color','r');
+            % Create static line objects with no data yet
+            axes(app.Temperature);
+            app.tempLine = plot(app.Temperature, NaN, NaN, 'r-');
             ylabel(app.Temperature,'Temperature °C')
             
-            app.co2Line = animatedline(app.CO2,'Color','b');
+            axes(app.CO2);
+            app.co2Line = plot(app.CO2, NaN, NaN, 'b-');
             ylabel(app.CO2,'CO2 PPM')
             
-            app.humLine = animatedline(app.Humidity,'Color','g');
+            axes(app.Humidity);
+            app.humLine = plot(app.Humidity, NaN, NaN, 'g-');
             ylabel(app.Humidity,'Humidity %')
             xlabel(app.Humidity,'Time (s)')
 
@@ -209,7 +218,7 @@ classdef LD_data < matlab.apps.AppBase
 
         % Button pushed function: ExportDataButton
         function ExportDataButtonPushed3(app, event)
-            resultsFolder = '../Results';
+            resultsFolder = '/Results';
         
             if ~isfolder(resultsFolder)
                 mkdir(resultsFolder);
