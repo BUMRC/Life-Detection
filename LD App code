@@ -37,9 +37,9 @@ classdef LD_data < matlab.apps.AppBase
         lastTimeVec          % time stamps from previous run
         selectedIdx          % indices of points selected via data tips
 
-        slopeTempTime      % time stamps for slope points
-        slopeTempData      % slope values (Temperature change per second)
-        slopeTempLine      % line handle for slope plot
+        Leak_RateTime      % time stamps for slope points
+        Leak_RateData      % slope values (Temperature change per second)
+        Leak_RateLine      % line handle for slope plot
     end
     
     methods (Access = public)
@@ -78,7 +78,7 @@ classdef LD_data < matlab.apps.AppBase
                 if app.row >= windowSize
                     idx = app.row-windowSize+1 : app.row;
                     t10 = app.timeVec(idx);
-                    y10 = app.dataSet(idx,1);  % Temperature
+                    y10 = app.dataSet(idx,2);  % Temperature
                 
                     % Linear fit: y = p(1)*t + p(2), slope = p(1)
                     p = polyfit(t10, y10, 1);
@@ -87,12 +87,12 @@ classdef LD_data < matlab.apps.AppBase
                     slope = NaN;  % not enough points yet
                 end
                 
-                app.slopeTempTime(app.row) = app.timeVec(app.row);
-                app.slopeTempData(app.row) = slope;
+                app.Leak_RateTime(app.row) = app.timeVec(app.row);
+                app.Leak_RateData(app.row) = slope;
                 
                 % Update slope line
-                set(app.slopeTempLine, 'XData', app.slopeTempTime(1:app.row), ...
-                                       'YData', app.slopeTempData(1:app.row));
+                set(app.Leak_RateLine, 'XData', app.Leak_RateTime(1:app.row), ...
+                                       'YData', app.Leak_RateData(1:app.row));
                                 
                 drawnow limitrate
             catch
@@ -148,7 +148,7 @@ end
 
         % Button pushed function: ConnecttoArduinoButton_2
         function ConnecttoArduinoButton_2Pushed3(app, event)
-            port = "/dev/cu.usbmodem101";
+            port = "COM11";
             baud = 115200;
             % --- Preserve previous run, if any ---
             if app.row > 0
@@ -169,7 +169,7 @@ end
             app.selectedIdx = [];
             app.row = 0;
 
-            app.slopeTempTime = zeros(app.maxRows,2);
+            app.Leak_RateTime = zeros(app.maxRows,2);
             app.slopeCO2Data = zeros(app.maxRows,2);
 
             
@@ -215,9 +215,9 @@ end
 
             % Create slope line (Temperature slope)
             axes(app.Leak_Rate);
-            app.slopeTempLine = plot(app.Leak_Rate, NaN, NaN, 'm-');
+            app.Leak_RateLine = plot(app.Leak_Rate, NaN, NaN, 'm-');
             xlabel(app.Leak_Rate,'Time (s)')
-            ylabel(app.Leak_Rate,'dT/dt (CO2/s)')
+            ylabel(app.Leak_Rate,'dC/dt (CO2/s)')
 
             % Enable interactive data tips on the axes
             app.Temperature.Interactions = [dataTipInteraction panInteraction zoomInteraction];
