@@ -169,8 +169,8 @@ end
             app.selectedIdx = [];
             app.row = 0;
 
-            app.slopeTempTime = zeros(app.maxRows,1);
-            app.slopeTempData = zeros(app.maxRows,1);
+            app.slopeTempTime = zeros(app.maxRows,2);
+            app.slopeCO2Data = zeros(app.maxRows,2);
 
             
             cla(app.Temperature)
@@ -214,10 +214,10 @@ end
             xlabel(app.Humidity,'Time (s)')
 
             % Create slope line (Temperature slope)
-            axes(app.TempSlope);
+            axes(app.Leak_Rate);
             app.slopeTempLine = plot(app.Leak_Rate, NaN, NaN, 'm-');
             xlabel(app.Leak_Rate,'Time (s)')
-            ylabel(app.Leak_Rate,'dT/dt (°C/s)')
+            ylabel(app.Leak_Rate,'dT/dt (CO2/s)')
 
             % Enable interactive data tips on the axes
             app.Temperature.Interactions = [dataTipInteraction panInteraction zoomInteraction];
