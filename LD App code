@@ -7,12 +7,13 @@ classdef LD_data < matlab.apps.AppBase
         ConnecttoArduinoButton_2    matlab.ui.control.Button
         ExportDataButton            matlab.ui.control.Button
         SolinoidValveSequenceLabel  matlab.ui.control.Label
-        LifeDetectionDataControlPanlelLabel  matlab.ui.control.Label
+        LifeDetectionDataControlPanelLabel  matlab.ui.control.Label
         ListBox                     matlab.ui.control.ListBox
-        TemperatureGraphsLabel      matlab.ui.control.Label
+        OtherTemperaturesLabel      matlab.ui.control.Label
         DropDown                    matlab.ui.control.DropDown
         DropDownLabel               matlab.ui.control.Label
         CloseExportButton           matlab.ui.control.Button
+        Leak_Rate                   matlab.ui.control.UIAxes
         Humidity                    matlab.ui.control.UIAxes
         CO2                         matlab.ui.control.UIAxes
         Temperature                 matlab.ui.control.UIAxes
@@ -35,6 +36,10 @@ classdef LD_data < matlab.apps.AppBase
         lastDataSet          % data from previous run
         lastTimeVec          % time stamps from previous run
         selectedIdx          % indices of points selected via data tips
+
+        slopeTempTime      % time stamps for slope points
+        slopeTempData      % slope values (Temperature change per second)
+        slopeTempLine      % line handle for slope plot
     end
     
     methods (Access = public)
@@ -49,8 +54,8 @@ classdef LD_data < matlab.apps.AppBase
                 end
                 
                 T = data(1);
-                H = data(2);
-                C = data(3);
+                H = data(3);
+                C = data(2);
                 
                 app.row = app.row + 1;
                 app.dataSet(app.row,:) = [T H C];
@@ -65,7 +70,30 @@ classdef LD_data < matlab.apps.AppBase
                                   'YData', app.dataSet(1:app.row,3));
                 set(app.humLine,  'XData', app.timeVec(1:app.row), ...
                                   'YData', app.dataSet(1:app.row,2));
+
+
+                % --- Compute slope over the last 10 points for Temperature ---
+                windowSize = 10;
                 
+                if app.row >= windowSize
+                    idx = app.row-windowSize+1 : app.row;
+                    t10 = app.timeVec(idx);
+                    y10 = app.dataSet(idx,1);  % Temperature
+                
+                    % Linear fit: y = p(1)*t + p(2), slope = p(1)
+                    p = polyfit(t10, y10, 1);
+                    slope = p(1);
+                else
+                    slope = NaN;  % not enough points yet
+                end
+                
+                app.slopeTempTime(app.row) = app.timeVec(app.row);
+                app.slopeTempData(app.row) = slope;
+                
+                % Update slope line
+                set(app.slopeTempLine, 'XData', app.slopeTempTime(1:app.row), ...
+                                       'YData', app.slopeTempData(1:app.row));
+                                
                 drawnow limitrate
             catch
             end
@@ -118,21 +146,6 @@ end
     % Callbacks that handle component events
     methods (Access = private)
 
-        % Callback function
-        function ConnecttoArduinoButton_2Pushed2(app, event)
-
-        end
-
-        % Callback function
-        function ExportDataButtonPushed2(app, event)
-
-        end
-
-        % Callback function
-        function CloseExportButtonPushed2(app, event)
-
-        end
-
         % Button pushed function: ConnecttoArduinoButton_2
         function ConnecttoArduinoButton_2Pushed3(app, event)
             port = "/dev/cu.usbmodem101";
@@ -155,10 +168,15 @@ end
             app.timeVec = zeros(app.maxRows,1);
             app.selectedIdx = [];
             app.row = 0;
+
+            app.slopeTempTime = zeros(app.maxRows,1);
+            app.slopeTempData = zeros(app.maxRows,1);
+
             
             cla(app.Temperature)
             cla(app.CO2)
             cla(app.Humidity)
+            cla(app.Leak_Rate)
 
             % --- Plot previous trial in gray, if available ---
             if ~isempty(app.lastDataSet)
@@ -195,6 +213,12 @@ end
             ylabel(app.Humidity,'Humidity %')
             xlabel(app.Humidity,'Time (s)')
 
+            % Create slope line (Temperature slope)
+            axes(app.TempSlope);
+            app.slopeTempLine = plot(app.Leak_Rate, NaN, NaN, 'm-');
+            xlabel(app.Leak_Rate,'Time (s)')
+            ylabel(app.Leak_Rate,'dT/dt (°C/s)')
+
             % Enable interactive data tips on the axes
             app.Temperature.Interactions = [dataTipInteraction panInteraction zoomInteraction];
             app.CO2.Interactions         = [dataTipInteraction panInteraction zoomInteraction];
@@ -218,7 +242,7 @@ end
 
         % Button pushed function: ExportDataButton
         function ExportDataButtonPushed3(app, event)
-            resultsFolder = '/Results';
+            resultsFolder = '\Results';
         
             if ~isfolder(resultsFolder)
                 mkdir(resultsFolder);
@@ -246,14 +270,14 @@ end
         
             % Main dataset export
             writetable(array2table(app.dataSet(1:app.row,:), ...
-                'VariableNames',{'Temperature','Humidity','CO2'}),fullFilePath);
+                'VariableNames',{'Temperature','CO2', 'Humidity'}),fullFilePath);
         
             % Highlighted points export
             if ~isempty(app.selectedIdx)
                 idx = unique(app.selectedIdx);
                 highlighted = [app.timeVec(idx), app.dataSet(idx,:)];  % [Time T H C]
                 highlightedTbl = array2table(highlighted, ...
-                    'VariableNames',{'Time_s','Temperature','Humidity','CO2'});
+                    'VariableNames',{'Time_s','Temperature','CO2','Humidity'});
                 
                 highlightedFile = fullfile(resultsFolder,'highlighted_data.csv');
                 writetable(highlightedTbl, highlightedFile);
@@ -299,6 +323,8 @@ end
             xlabel(app.Temperature, 'Time')
             ylabel(app.Temperature, 'Temperature °C')
             zlabel(app.Temperature, 'Z')
+            app.Temperature.XGrid = 'on';
+            app.Temperature.YGrid = 'on';
             app.Temperature.Position = [21 260 456 222];
 
             % Create CO2
@@ -307,7 +333,7 @@ end
             xlabel(app.CO2, 'Time')
             ylabel(app.CO2, 'Humidity %')
             zlabel(app.CO2, 'Z')
-            app.CO2.Position = [21 22 456 218];
+            app.CO2.Position = [486 98 257 157];
 
             % Create Humidity
             app.Humidity = uiaxes(app.UIFigure);
@@ -315,7 +341,19 @@ end
             xlabel(app.Humidity, 'Time')
             ylabel(app.Humidity, 'CO2 PPM')
             zlabel(app.Humidity, 'Z')
+            app.Humidity.XGrid = 'on';
+            app.Humidity.YGrid = 'on';
             app.Humidity.Position = [486 260 455 222];
+
+            % Create Leak_Rate
+            app.Leak_Rate = uiaxes(app.UIFigure);
+            title(app.Leak_Rate, 'Leak Rate')
+            xlabel(app.Leak_Rate, 'Time')
+            ylabel(app.Leak_Rate, 'Leak Rate')
+            zlabel(app.Leak_Rate, 'Z')
+            app.Leak_Rate.XGrid = 'on';
+            app.Leak_Rate.YGrid = 'on';
+            app.Leak_Rate.Position = [21 18 456 222];
 
             % Create CloseExportButton
             app.CloseExportButton = uibutton(app.UIFigure, 'push');
@@ -327,36 +365,36 @@ end
             % Create DropDownLabel
             app.DropDownLabel = uilabel(app.UIFigure);
             app.DropDownLabel.HorizontalAlignment = 'right';
-            app.DropDownLabel.Position = [742 183 66 22];
+            app.DropDownLabel.Position = [753 183 66 22];
             app.DropDownLabel.Text = 'Drop Down';
 
             % Create DropDown
             app.DropDown = uidropdown(app.UIFigure);
-            app.DropDown.Position = [823 183 100 22];
+            app.DropDown.Position = [834 183 100 22];
 
-            % Create TemperatureGraphsLabel
-            app.TemperatureGraphsLabel = uilabel(app.UIFigure);
-            app.TemperatureGraphsLabel.FontSize = 14;
-            app.TemperatureGraphsLabel.Position = [534 211 174 36];
-            app.TemperatureGraphsLabel.Text = 'Temperature Graphs';
+            % Create OtherTemperaturesLabel
+            app.OtherTemperaturesLabel = uilabel(app.UIFigure);
+            app.OtherTemperaturesLabel.FontSize = 14;
+            app.OtherTemperaturesLabel.Position = [528 63 174 36];
+            app.OtherTemperaturesLabel.Text = 'Other Temperatures';
 
             % Create ListBox
             app.ListBox = uilistbox(app.UIFigure);
             app.ListBox.Items = {'Thermoresistor', 'Heating element'};
             app.ListBox.Multiselect = 'on';
-            app.ListBox.Position = [534 53 174 152];
+            app.ListBox.Position = [528 17 174 47];
             app.ListBox.Value = {'Thermoresistor'};
 
-            % Create LifeDetectionDataControlPanlelLabel
-            app.LifeDetectionDataControlPanlelLabel = uilabel(app.UIFigure);
-            app.LifeDetectionDataControlPanlelLabel.FontSize = 24;
-            app.LifeDetectionDataControlPanlelLabel.Position = [21 495 397 32];
-            app.LifeDetectionDataControlPanlelLabel.Text = 'Life Detection Data & Control Panlel';
+            % Create LifeDetectionDataControlPanelLabel
+            app.LifeDetectionDataControlPanelLabel = uilabel(app.UIFigure);
+            app.LifeDetectionDataControlPanelLabel.FontSize = 24;
+            app.LifeDetectionDataControlPanelLabel.Position = [21 495 390 32];
+            app.LifeDetectionDataControlPanelLabel.Text = 'Life Detection Data & Control Panel';
 
             % Create SolinoidValveSequenceLabel
             app.SolinoidValveSequenceLabel = uilabel(app.UIFigure);
             app.SolinoidValveSequenceLabel.FontSize = 14;
-            app.SolinoidValveSequenceLabel.Position = [742 218 159 22];
+            app.SolinoidValveSequenceLabel.Position = [753 218 159 22];
             app.SolinoidValveSequenceLabel.Text = 'Solinoid Valve Sequence';
 
             % Create ExportDataButton
