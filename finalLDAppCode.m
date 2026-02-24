@@ -97,7 +97,7 @@ classdef finalLDAppCode < matlab.apps.AppBase
                 C = data(2);
 
                 app.row = app.row + 1;
-                app.dataSet(app.row,:) = [T H C];
+                app.dataSet(app.row,:) = [T C H];
                 tNow = toc(app.t0);
                 app.timeVec(app.row) = tNow;
 
@@ -230,7 +230,7 @@ classdef finalLDAppCode < matlab.apps.AppBase
         % ---- TAB 1 CALLBACKS ----
 
         function ConnecttoArduinoButton_2Pushed3(app, ~)
-            port = "COM11";
+            port = "COM5";
             baud = 115200;
 
             if app.row > 0
